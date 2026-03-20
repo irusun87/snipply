@@ -62,14 +62,11 @@ with st.sidebar:
 
 # 영상 입력
 st.subheader("1️⃣ 영상 입력")
-input_mode = st.radio("입력 방식", ["YouTube URL", "파일 업로드"], horizontal=True)
-
-if input_mode == "YouTube URL":
-    url = st.text_input("YouTube 링크", placeholder="https://www.youtube.com/watch?v=...")
-    ready = bool(url)
-else:
-    uploaded = st.file_uploader("영상 또는 오디오 파일", type=["mp4", "mov", "mp3", "wav", "m4a"])
-    ready = uploaded is not None
+uploaded = st.file_uploader(
+    "영상 또는 오디오 파일을 업로드하세요",
+    type=["mp4", "mov", "mp3", "wav", "m4a"]
+)
+ready = uploaded is not None
 
 run_btn = st.button("▶ 분석 시작", type="primary", use_container_width=True, disabled=not ready)
 
@@ -77,12 +74,9 @@ if run_btn and ready:
     st.divider()
     try:
         with st.status("📥 오디오 추출 중...", expanded=True) as s:
-            if input_mode == "YouTube URL":
-                audio_path = download_audio(url)
-            else:
-                tmp_path = Path("/tmp") / uploaded.name
-                tmp_path.write_bytes(uploaded.read())
-                audio_path = str(tmp_path)
+            tmp_path = Path("/tmp") / uploaded.name
+            tmp_path.write_bytes(uploaded.read())
+            audio_path = str(tmp_path)
             s.update(label="✅ 오디오 추출 완료", state="complete")
 
         with st.status(f"🎙️ Whisper({model_size}) 전사 중...", expanded=True) as s:
