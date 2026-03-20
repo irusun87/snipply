@@ -100,7 +100,7 @@ if run_btn and uploaded:
             s.update(label="✅ 전사 완료", state="complete")
 
         with st.expander("📄 원본 전사 결과 보기"):
-            st.text_area("", raw_transcript, height=150, label_visibility="collapsed")
+            st.text_area("", raw_transcript, height=150, label_visibility="collapsed", key="raw_transcript")
 
         # Claude 교정
         with st.status("✍️ 전사본 교정 중...", expanded=True) as s:
@@ -108,7 +108,7 @@ if run_btn and uploaded:
             s.update(label="✅ 교정 완료", state="complete")
 
         with st.expander("📝 교정된 전사본 보기"):
-            st.text_area("", corrected, height=150, label_visibility="collapsed")
+            st.text_area("", corrected, height=150, label_visibility="collapsed", key="corrected_transcript")
 
         # 주제 발굴 + 대본 생성
         with st.status(f"🚀 [{category}] 쇼츠 주제 및 대본 생성 중...", expanded=True) as s:
