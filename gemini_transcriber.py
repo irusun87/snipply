@@ -4,6 +4,9 @@ import os
 import json
 import re
 import time
+import mimetypes
+import shutil
+from pathlib import Path
 
 
 def transcribe_with_gemini(audio_path: str, category: str = "감동", shorts_count: int = 3, titles_per_topic: int = 5) -> tuple:
@@ -65,17 +68,18 @@ def transcribe_with_gemini(audio_path: str, category: str = "감동", shorts_cou
 }}
 """
 
-    # 파일 업로드
-    with open(audio_path, "rb") as f:
-        file_data = f.read()
+    # 한글 파일명 문제 방지: 영문 임시 파일로 복사
+    suffix = Path(audio_path).suffix
+    safe_path = f"/tmp/snipply_upload{suffix}"
+    shutil.copy2(audio_path, safe_path)
 
-    import mimetypes
-    mime_type, _ = mimetypes.guess_type(audio_path)
+    mime_type, _ = mimetypes.guess_type(safe_path)
     if not mime_type:
         mime_type = "video/mp4"
 
+    # 파일 업로드
     uploaded = client.files.upload(
-        file=audio_path,
+        file=safe_path,
         config=types.UploadFileConfig(mime_type=mime_type)
     )
 
