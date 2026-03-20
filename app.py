@@ -136,7 +136,7 @@ if run_btn and uploaded:
 
             st.markdown("**🎬 쇼츠 대본**")
             st.text_area("대본", value=item["script"], height=300,
-                         label_visibility="collapsed", key=f"script_{i}")
+                label_visibility="collapsed", key=f"script_{category}_{i}")
             st.markdown("</div>", unsafe_allow_html=True)
 
         # 전체 다운로드
