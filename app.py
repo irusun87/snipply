@@ -10,7 +10,7 @@ for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]:
 from transcriber import transcribe_audio
 from corrector import correct_transcript
 from analyzer import analyze_and_generate
-from gemini_transcriber import transcribe_with_gemini
+from gemini_transcriber import generate_script_with_gemini
 
 st.set_page_config(page_title="Snipply", page_icon="🎬", layout="centered")
 
@@ -49,19 +49,19 @@ with st.sidebar:
     st.header("⚙️ 생성 옵션")
 
     # 엔진 선택
-    st.subheader("🔧 전사 엔진")
+    st.subheader("🔧 대본 생성 엔진")
     engine = st.radio(
         "엔진 선택",
-        options=["Whisper + Claude", "Gemini"],
+        options=["Claude", "Gemini Pro"],
         horizontal=True,
         label_visibility="collapsed"
     )
-    if engine == "Whisper + Claude":
-        st.caption("✅ 안정적 · 타임라인 정확 · 2단계 처리")
+    if engine == "Claude":
+        st.caption("✅ 안정적 · 빠름 · Claude Sonnet")
     else:
         if not os.getenv("GEMINI_API_KEY"):
             st.warning("⚠️ GEMINI_API_KEY가 설정되지 않았습니다.")
-        st.caption("⚡ 빠름 · 영상 직접 분석 · 한 번에 처리")
+        st.caption("🧠 사고모드 · 고품질 · Gemini 2.5 Pro")
 
     st.divider()
 
@@ -111,40 +111,36 @@ if run_btn and uploaded:
             audio_path = str(tmp_path)
             s.update(label="✅ 파일 준비 완료", state="complete")
 
-        if engine == "Gemini":
-            # ── Gemini 단일 처리 ──────────────────────────────────────
-            with st.status("⚡ Gemini가 영상 분석 중... (전사 + 대본 동시 처리)", expanded=True) as s:
-                transcript, results = transcribe_with_gemini(
-                    audio_path,
+        # ── 공통: Whisper 전사 ─────────────────────────────────────────
+        with st.status("🎙️ Whisper 전사 중...", expanded=True) as s:
+            raw_transcript = transcribe_audio(audio_path)
+            s.update(label="✅ 전사 완료", state="complete")
+
+        with st.expander("📄 원본 전사 결과 보기"):
+            st.text_area("", raw_transcript, height=150,
+                         label_visibility="collapsed", key="raw_transcript")
+
+        # ── 공통: Claude 교정 ──────────────────────────────────────────
+        with st.status("✍️ 전사본 교정 중...", expanded=True) as s:
+            corrected = correct_transcript(raw_transcript)
+            s.update(label="✅ 교정 완료", state="complete")
+
+        with st.expander("📝 교정된 전사본 보기"):
+            st.text_area("", corrected, height=150,
+                         label_visibility="collapsed", key="corrected_transcript")
+
+        # ── 대본 생성: 엔진에 따라 분기 ───────────────────────────────
+        if engine == "Gemini Pro":
+            with st.status("🧠 Gemini 2.5 Pro 사고 중...", expanded=True) as s:
+                results = generate_script_with_gemini(
+                    corrected,
                     category=category,
                     shorts_count=shorts_count,
                     titles_per_topic=titles_per_topic
                 )
-                s.update(label="✅ Gemini 분석 완료!", state="complete")
-
-            with st.expander("📄 전사 결과 보기 (Gemini)"):
-                st.text_area("", transcript, height=150,
-                             label_visibility="collapsed", key="gemini_transcript")
-
+                s.update(label="✅ 완료!", state="complete")
         else:
-            # ── Whisper + Claude 2단계 처리 ──────────────────────────
-            with st.status("🎙️ Whisper 전사 중...", expanded=True) as s:
-                raw_transcript = transcribe_audio(audio_path)
-                s.update(label="✅ 전사 완료", state="complete")
-
-            with st.expander("📄 원본 전사 결과 보기"):
-                st.text_area("", raw_transcript, height=150,
-                             label_visibility="collapsed", key="raw_transcript")
-
-            with st.status("✍️ 전사본 교정 중...", expanded=True) as s:
-                corrected = correct_transcript(raw_transcript)
-                s.update(label="✅ 교정 완료", state="complete")
-
-            with st.expander("📝 교정된 전사본 보기"):
-                st.text_area("", corrected, height=150,
-                             label_visibility="collapsed", key="corrected_transcript")
-
-            with st.status(f"🚀 [{category}] 쇼츠 주제 및 대본 생성 중...", expanded=True) as s:
+            with st.status(f"🚀 Claude가 대본 생성 중...", expanded=True) as s:
                 results = analyze_and_generate(
                     corrected,
                     shorts_count=shorts_count,
