@@ -39,35 +39,6 @@ def transcribe_with_gemini(audio_path: str, category: str = "감동", shorts_cou
 예시: "22군번 월급 120만원 듣고 기절한 06해병 반응 실화임?"
 """
 
-    prompt = f"""
-이 영상을 분석해서 한국어 유튜브 쇼츠 대본을 만들어주세요.
-
-[작업]
-1. 영상 전체를 SRT 형식으로 전사 (타임라인 포함)
-2. 쇼츠 주제 {shorts_count}개 발굴
-3. 각 주제별 제목 {titles_per_topic}개 + 기승전결 대본
-
-[카테고리: {category}]
-{style_guide}
-
-[자막 인용 형식 - 반드시 준수]
-[00:00:11,000 --> 00:00:13,000] (화자명)
-"대사 내용"
-
-[JSON 형식으로만 출력]
-{{
-  "transcript": "SRT 형식 전체 전사본",
-  "results": [
-    {{
-      "topic": "주제 한 줄 요약",
-      "reason": "왜 시청자가 반응할지 1~2문장",
-      "titles": ["제목1", "제목2", "제목3", "제목4", "제목5"],
-      "script": "타임라인 포함한 기승전결 대본 전문"
-    }}
-  ]
-}}
-"""
-
     # 한글 파일명 문제 방지: 영문 임시 파일로 복사
     suffix = Path(audio_path).suffix
     safe_path = f"/tmp/snipply_upload{suffix}"
@@ -77,13 +48,12 @@ def transcribe_with_gemini(audio_path: str, category: str = "감동", shorts_cou
     if not mime_type:
         mime_type = "video/mp4"
 
-    # 파일 업로드
+    # ── 1단계: gemini-2.5-flash로 전사 ───────────────────────────────
     uploaded = client.files.upload(
         file=safe_path,
         config=types.UploadFileConfig(mime_type=mime_type)
     )
 
-    # 처리 대기
     while uploaded.state.name == "PROCESSING":
         time.sleep(2)
         uploaded = client.files.get(name=uploaded.name)
@@ -91,20 +61,64 @@ def transcribe_with_gemini(audio_path: str, category: str = "감동", shorts_cou
     if uploaded.state.name == "FAILED":
         raise ValueError("Gemini 파일 업로드 실패")
 
-    # 분석 요청
-    response = client.models.generate_content(
+    transcript_response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=[
             types.Part.from_uri(file_uri=uploaded.uri, mime_type=mime_type),
-            prompt
+            "이 영상의 전체 내용을 SRT 형식으로 전사해주세요. 타임라인과 화자명을 정확하게 포함하세요. SRT 텍스트만 출력하고 다른 설명은 하지 마세요."
         ]
     )
 
     # 파일 삭제
     client.files.delete(name=uploaded.name)
 
-    raw = response.text.strip()
+    transcript = transcript_response.text.strip()
+
+    # ── 2단계: gemini-2.5-pro로 대본 생성 (사고모드) ──────────────────
+    script_prompt = f"""
+당신은 한국 유튜브 쇼츠 전문 대본 작가입니다.
+아래 SRT 전사본을 분석해서 쇼츠 주제와 대본을 작성해주세요.
+
+[카테고리: {category}]
+{style_guide}
+
+[작업]
+1. 쇼츠로 만들기 좋은 주제 {shorts_count}개 발굴
+2. 각 주제별 제목 {titles_per_topic}개 + 기승전결 대본 작성
+
+[자막 인용 형식 - 반드시 준수]
+SRT 전사본의 타임라인을 그대로 가져와서 아래 형식으로 작성하세요.
+절대로 타임라인을 생략하거나 임의로 만들지 마세요.
+
+[00:00:11,000 --> 00:00:13,000] (화자명)
+"대사 내용"
+
+[JSON 형식으로만 출력 - 다른 텍스트 금지]
+{{
+  "results": [
+    {{
+      "topic": "주제 한 줄 요약",
+      "reason": "왜 시청자가 반응할지 1~2문장",
+      "titles": ["제목1", "제목2", "제목3", "제목4", "제목5"],
+      "script": "타임라인 포함한 기승전결 대본 전문"
+    }}
+  ]
+}}
+
+[SRT 전사본]
+{transcript}
+"""
+
+    script_response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=script_prompt,
+        config=types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_budget=8192)
+        )
+    )
+
+    raw = script_response.text.strip()
     raw = re.sub(r"```json|```", "", raw).strip()
 
     data = json.loads(raw)
-    return data.get("transcript", ""), data.get("results", [])
+    return transcript, data.get("results", [])
