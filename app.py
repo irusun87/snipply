@@ -3,13 +3,14 @@ import os
 from pathlib import Path
 
 # Streamlit Cloud secrets → 환경변수 자동 주입
-for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]:
+for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]:
     if key not in os.environ and hasattr(st, "secrets") and key in st.secrets:
         os.environ[key] = st.secrets[key]
 
 from transcriber import transcribe_audio
 from corrector import correct_transcript
 from analyzer import analyze_and_generate
+from gemini_transcriber import transcribe_with_gemini
 
 st.set_page_config(page_title="Snipply", page_icon="🎬", layout="centered")
 
@@ -47,6 +48,23 @@ st.divider()
 with st.sidebar:
     st.header("⚙️ 생성 옵션")
 
+    # 엔진 선택
+    st.subheader("🔧 전사 엔진")
+    engine = st.radio(
+        "엔진 선택",
+        options=["Whisper + Claude", "Gemini"],
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+    if engine == "Whisper + Claude":
+        st.caption("✅ 안정적 · 타임라인 정확 · 2단계 처리")
+    else:
+        if not os.getenv("GEMINI_API_KEY"):
+            st.warning("⚠️ GEMINI_API_KEY가 설정되지 않았습니다.")
+        st.caption("⚡ 빠름 · 영상 직접 분석 · 한 번에 처리")
+
+    st.divider()
+
     # 카테고리 선택
     st.subheader("📂 콘텐츠 카테고리")
     category = st.radio(
@@ -55,7 +73,6 @@ with st.sidebar:
         horizontal=True,
         label_visibility="collapsed"
     )
-
     if category == "감동":
         st.caption("💜 감동/사연 특화 · 존댓말 나레이션")
     else:
@@ -77,7 +94,7 @@ uploaded = st.file_uploader(
 )
 
 run_btn = st.button(
-    f"▶ [{category}] 분석 시작",
+    f"▶ [{category}] 분석 시작  |  {engine}",
     type="primary",
     use_container_width=True,
     disabled=uploaded is None
@@ -94,31 +111,47 @@ if run_btn and uploaded:
             audio_path = str(tmp_path)
             s.update(label="✅ 파일 준비 완료", state="complete")
 
-        # Whisper 전사
-        with st.status("🎙️ Whisper 전사 중...", expanded=True) as s:
-            raw_transcript = transcribe_audio(audio_path)
-            s.update(label="✅ 전사 완료", state="complete")
+        if engine == "Gemini":
+            # ── Gemini 단일 처리 ──────────────────────────────────────
+            with st.status("⚡ Gemini가 영상 분석 중... (전사 + 대본 동시 처리)", expanded=True) as s:
+                transcript, results = transcribe_with_gemini(
+                    audio_path,
+                    category=category,
+                    shorts_count=shorts_count,
+                    titles_per_topic=titles_per_topic
+                )
+                s.update(label="✅ Gemini 분석 완료!", state="complete")
 
-        with st.expander("📄 원본 전사 결과 보기"):
-            st.text_area("", raw_transcript, height=150, label_visibility="collapsed", key="raw_transcript")
+            with st.expander("📄 전사 결과 보기 (Gemini)"):
+                st.text_area("", transcript, height=150,
+                             label_visibility="collapsed", key="gemini_transcript")
 
-        # Claude 교정
-        with st.status("✍️ 전사본 교정 중...", expanded=True) as s:
-            corrected = correct_transcript(raw_transcript)
-            s.update(label="✅ 교정 완료", state="complete")
+        else:
+            # ── Whisper + Claude 2단계 처리 ──────────────────────────
+            with st.status("🎙️ Whisper 전사 중...", expanded=True) as s:
+                raw_transcript = transcribe_audio(audio_path)
+                s.update(label="✅ 전사 완료", state="complete")
 
-        with st.expander("📝 교정된 전사본 보기"):
-            st.text_area("", corrected, height=150, label_visibility="collapsed", key="corrected_transcript")
+            with st.expander("📄 원본 전사 결과 보기"):
+                st.text_area("", raw_transcript, height=150,
+                             label_visibility="collapsed", key="raw_transcript")
 
-        # 주제 발굴 + 대본 생성
-        with st.status(f"🚀 [{category}] 쇼츠 주제 및 대본 생성 중...", expanded=True) as s:
-            results = analyze_and_generate(
-                corrected,
-                shorts_count=shorts_count,
-                titles_per_topic=titles_per_topic,
-                category=category
-            )
-            s.update(label="✅ 완료!", state="complete")
+            with st.status("✍️ 전사본 교정 중...", expanded=True) as s:
+                corrected = correct_transcript(raw_transcript)
+                s.update(label="✅ 교정 완료", state="complete")
+
+            with st.expander("📝 교정된 전사본 보기"):
+                st.text_area("", corrected, height=150,
+                             label_visibility="collapsed", key="corrected_transcript")
+
+            with st.status(f"🚀 [{category}] 쇼츠 주제 및 대본 생성 중...", expanded=True) as s:
+                results = analyze_and_generate(
+                    corrected,
+                    shorts_count=shorts_count,
+                    titles_per_topic=titles_per_topic,
+                    category=category
+                )
+                s.update(label="✅ 완료!", state="complete")
 
         # ── 결과 출력 ──────────────────────────────────────────────────
         st.divider()
@@ -136,12 +169,13 @@ if run_btn and uploaded:
 
             st.markdown("**🎬 쇼츠 대본**")
             st.text_area("대본", value=item["script"], height=300,
-                label_visibility="collapsed", key=f"script_{category}_{i}")
+                         label_visibility="collapsed",
+                         key=f"script_{engine}_{category}_{i}")
             st.markdown("</div>", unsafe_allow_html=True)
 
         # 전체 다운로드
         st.divider()
-        full_text = f"[카테고리: {category}]\n\n" + "\n\n".join([
+        full_text = f"[카테고리: {category}] [엔진: {engine}]\n\n" + "\n\n".join([
             f"=== 주제 {i}: {r['topic']} ===\n[왜 반응할까]\n{r['reason']}\n\n"
             f"[추천 제목]\n" + "\n".join(f"{j+1}. {t}" for j, t in enumerate(r["titles"])) +
             f"\n\n[대본]\n{r['script']}"
@@ -150,7 +184,7 @@ if run_btn and uploaded:
         st.download_button(
             "📥 전체 결과 다운로드 (.txt)",
             data=full_text,
-            file_name=f"snipply_{category}_results.txt",
+            file_name=f"snipply_{category}_{engine}_results.txt",
             mime="text/plain",
             use_container_width=True
         )
