@@ -93,7 +93,7 @@ def transcribe_with_gemini(audio_path: str, category: str = "감동", shorts_cou
 
     # 분석 요청
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=[
             types.Part.from_uri(file_uri=uploaded.uri, mime_type=mime_type),
             prompt
