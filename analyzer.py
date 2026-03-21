@@ -159,9 +159,11 @@ def analyze_and_generate(
         data = json.loads(raw)
         return data["results"]
     except json.JSONDecodeError:
+        # JSON 파싱 실패 시 앞 500자 디버깅용으로 출력
+        preview = raw[:500] if len(raw) > 500 else raw
         return [{
-            "topic": "분석 결과",
-            "reason": "JSON 파싱에 실패했습니다. 아래 원문을 확인해주세요.",
-            "titles": ["제목을 불러오지 못했습니다."],
+            "topic": "⚠️ JSON 파싱 실패 - 디버깅",
+            "reason": f"Claude 응답 앞 500자: {preview}",
+            "titles": ["파싱 실패"],
             "script": raw
         }]
