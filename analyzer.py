@@ -158,16 +158,15 @@ def analyze_and_generate(
     try:
         data = json.loads(raw)
         return data["results"]
-    except json.JSONDecodeError:
-        # 꺾인 따옴표 → 일반 따옴표 변환 후 재시도
-        cleaned = raw.replace('"', '"').replace('"', '"').replace("'", "'").replace("'", "'")
+   except json.JSONDecodeError as e:
+        cleaned = raw.replace('\u201c', '"').replace('\u201d', '"').replace('\u2018', "'").replace('\u2019', "'")
         try:
             data = json.loads(cleaned)
             return data["results"]
         except json.JSONDecodeError:
             return [{
-                "topic": "분석 결과",
-                "reason": "JSON 파싱에 실패했습니다. 다시 시도해주세요.",
-                "titles": ["제목을 불러오지 못했습니다."],
-                "script": cleaned
+                "topic": "⚠️ 디버깅",
+                "reason": f"오류: {str(e)} | 앞200자: {raw[:200]}",
+                "titles": ["파싱 실패"],
+                "script": raw
             }]
